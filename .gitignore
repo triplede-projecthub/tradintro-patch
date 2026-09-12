@@ -1,0 +1,6 @@
+node_modules/
+logs/
+*.tsbuildinfo
+.eslintcache
+config/.env*
+!config/.env.example

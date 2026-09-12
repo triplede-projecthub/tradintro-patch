@@ -1,0 +1,53 @@
+/// <reference types="express" />
+import { UserService } from '@loopback/authentication';
+import { Request } from '@loopback/rest';
+import { UserProfile } from '@loopback/security';
+import { User } from '../models';
+import { ChangePasswordRequest } from '../models/dto/change-password-request.model';
+import { FcmTokenChangeRequest } from '../models/dto/fcm-token-change-request.model';
+import { LoginResponseData } from '../models/dto/login-response-data.model';
+import { UserLogin } from '../models/dto/user-login.model';
+import { NotificationsRepository, PortfolioItemRepository, UserInviteRepository, WalletRepository, WatchListRepository } from '../repositories';
+import { DeletedUserRepository } from '../repositories/deleted-user.repository';
+import { TaxRepository } from '../repositories/tax.repository';
+import { UserRepository } from '../repositories/user.repository';
+import { JWTServiceUtils } from './jwt.service';
+import { BCryptPasswordHasherService } from './password-hasher.service';
+import { UserPointsService } from './user-points.service';
+import { UserTokenService } from './user-token.service';
+import { ValidationsService } from './validations.service';
+export declare class ProfileUserService implements UserService<User, UserLogin> {
+    private userRepository;
+    private deletedUserRepository;
+    private userPointsService;
+    private userTokenService;
+    private hasher;
+    private jwtServiceUtils;
+    private validator;
+    walletRepository: WalletRepository;
+    watchListRepository: WatchListRepository;
+    portfolioRepository: PortfolioItemRepository;
+    userInviteRepository: UserInviteRepository;
+    private notificationsRepository;
+    private taxRepository;
+    constructor(userRepository: UserRepository, deletedUserRepository: DeletedUserRepository, userPointsService: UserPointsService, userTokenService: UserTokenService, hasher: BCryptPasswordHasherService, jwtServiceUtils: JWTServiceUtils, validator: ValidationsService, walletRepository: WalletRepository, watchListRepository: WatchListRepository, portfolioRepository: PortfolioItemRepository, userInviteRepository: UserInviteRepository, notificationsRepository: NotificationsRepository, taxRepository: TaxRepository);
+    getTaxDetails(userId: number): Promise<(import("../models").Tax & import("../models").TaxRelations)[]>;
+    deleteUserAccount(userId: number): Promise<{
+        count: number;
+    }>;
+    updateUserBasicInfo(request: Request, userId: number): Promise<User & import("../models").UserRelations>;
+    deleteImageFile(lastImage: string | undefined): void;
+    findUserInviteList(userId: number, limit: number, offset: number): Promise<(import("../models").UserInvite & import("../models").UserInviteRelations)[]>;
+    userFcmUpdate(userId: number, fcmTokenChangeRequest: FcmTokenChangeRequest): Promise<boolean>;
+    userTotalPoints(user_id: number): Promise<number>;
+    verifyCredentials(credentials: UserLogin): Promise<User>;
+    convertToUserProfile(user: User): UserProfile;
+    findById(id: number): Promise<(User & import("../models").UserRelations) | null>;
+    userLogout(userId: number, fcmTokenChangeRequest: FcmTokenChangeRequest): Promise<void>;
+    userLogin(login: UserLogin): Promise<LoginResponseData>;
+    _convertUTCDateToLocalDate(date: Date): Date;
+    userLoginPasswordChange(userId: number, passwordRequest: ChangePasswordRequest): Promise<LoginResponseData>;
+    userTotalWalletAmount(user_id: number): Promise<number>;
+    userTotalTradValue(user_id: number): Promise<number>;
+    userTotalInvestments(user_id: number): Promise<number>;
+}
