@@ -240,7 +240,7 @@ let ProfileUserService = class ProfileUserService {
             }).then(async (user) => {
                 var _a, _b, _c, _d, _e, _f, _g, _h;
                 if (user == null || user == undefined) {
-                    reject(new rest_1.HttpErrors.Unauthorized("Incorrect email id or password."));
+                    reject(new rest_1.HttpErrors.Unauthorized("Error! User account does not exist")); // TI24-0208-001
                 }
                 else {
                     const passwordMD5 = crypto_1.default.createHash('md5').update(login.password).digest("hex");
@@ -312,6 +312,10 @@ let ProfileUserService = class ProfileUserService {
                         const newPassword = crypto_1.default.createHash('md5')
                             .update(passwordRequest.newPassword).digest("hex");
                         ;
+                        if (newPassword === currentPassword) {
+                            reject(new rest_1.HttpErrors.BadRequest("Your new password cannot be same as old password")); // TI24-0203-002
+                            return;
+                        }
                         user.user_password = newPassword;
                         await this.userRepository.update(user);
                         const profile = this.jwtServiceUtils.createTokenProfile({
