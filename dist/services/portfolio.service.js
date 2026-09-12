@@ -2124,7 +2124,7 @@ let PortfolioService = class PortfolioService {
                         data.alertPrice = (_a = activeNotification.notification_price) !== null && _a !== void 0 ? _a : 0;
                     }
                 }
-                data.avgPurchasePrice = this.limitDecimalPoints(data.totalPrice / data.qty);
+                data.avgPurchasePrice = this.limitDecimalPoints(buyQuantity > 0 ? buyTotalAmount / buyQuantity : 0); // TI26-006-001
                 data.totalValue = this.limitDecimalPoints(data.currentPrice * data.qty);
                 data.gainLossValue = this.limitDecimalPoints(data.totalValue - data.totalPrice);
                 data.gainLossPercentage = this.limitDecimalPoints((data.gainLossValue / data.totalPrice) * 100);

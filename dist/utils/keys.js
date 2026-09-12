@@ -16,7 +16,7 @@ var TokenServiceConstants;
 (function (TokenServiceConstants) {
     TokenServiceConstants.REFRESH_TOKEN_SECRET_VALUE = 'qwhkbfdo097nh';
     TokenServiceConstants.API_KEY_SECRET_VALUE = 'qwhkghuo097nh';
-    TokenServiceConstants.API_TOKEN_EXPIRES_IN_VALUE = '24h';
+    TokenServiceConstants.API_TOKEN_EXPIRES_IN_VALUE = '2h'; // TI24-0113-001: 2h session
     TokenServiceConstants.REFRESH_TOKEN_EXPIRES_IN_VALUE = '96h';
 })(TokenServiceConstants = exports.TokenServiceConstants || (exports.TokenServiceConstants = {}));
 var TokenServiceBindings;
