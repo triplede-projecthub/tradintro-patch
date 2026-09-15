@@ -7,6 +7,7 @@ export declare class WalletSummeryResponse extends Model {
     available_margin?: number;
     margin_used?: number;
     trade_money_usable_balance?: number;
+    trade_money_blocked?: number;
     constructor(data?: Partial<WalletSummeryResponse>);
 }
 export interface WalletSummeryResponseRelations {

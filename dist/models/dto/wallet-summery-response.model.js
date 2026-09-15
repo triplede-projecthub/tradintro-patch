@@ -58,6 +58,13 @@ tslib_1.__decorate([
     }),
     tslib_1.__metadata("design:type", Number)
 ], WalletSummeryResponse.prototype, "trade_money_usable_balance", void 0);
+tslib_1.__decorate([
+    (0, repository_1.property)({
+        type: 'number',
+        default: 0,
+    }),
+    tslib_1.__metadata("design:type", Number)
+], WalletSummeryResponse.prototype, "trade_money_blocked", void 0);
 WalletSummeryResponse = tslib_1.__decorate([
     (0, repository_1.model)(),
     tslib_1.__metadata("design:paramtypes", [Object])

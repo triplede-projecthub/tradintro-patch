@@ -144,6 +144,12 @@ let WalletService = class WalletService {
                         last_allocation_date: last_recharge === null || last_recharge === void 0 ? void 0 : last_recharge.wallet_created_on,
                         trade_money_usable_balance: trade_money_usable_balance,
                         trade_money_balance: trade_money_balance,
+                        // TI24-0168-002: trade money committed to unsettled buy orders. This is the
+                        // same figure usable_balance subtracts: offline "requested" orders
+                        // (market_status != 0) plus online "pending" limit orders (order_status = 1).
+                        // Market closed -> requested + pending; once the market opens the settlement
+                        // cron clears the requested rows, so it naturally becomes pending only.
+                        trade_money_blocked: totalBuyPendingAmount,
                         margin_used: totalBuyMargin - totalSellMargin,
                         available_margin: available_margin
                     });
@@ -154,6 +160,7 @@ let WalletService = class WalletService {
                         last_allocation_date: last_recharge === null || last_recharge === void 0 ? void 0 : last_recharge.wallet_created_on,
                         trade_money_balance: 0,
                         trade_money_usable_balance: 0,
+                        trade_money_blocked: totalBuyPendingAmount,
                         available_margin: 0,
                         margin_used: totalBuyMargin - totalSellMargin
                     });

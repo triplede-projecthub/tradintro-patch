@@ -25,6 +25,7 @@ let WalletController = class WalletController {
                 walletSummery.trade_money_usable_balance = this.limitDecimalPoints(summery.trade_money_usable_balance);
                 walletSummery.margin_used = summery.margin_used;
                 walletSummery.available_margin = this.limitDecimalPoints(summery.available_margin);
+                walletSummery.trade_money_blocked = this.limitDecimalPoints(summery.trade_money_blocked);
                 if (summery.last_allocation_date) {
                     console.log(summery.last_allocation_date);
                     walletSummery.last_allocated_on = (0, moment_1.default)(summery.last_allocation_date).utc().format("DD/MM/YYYY hh:mm A");
