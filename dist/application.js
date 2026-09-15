@@ -100,6 +100,7 @@ class TradIntroBackendApplication extends (0, boot_1.BootMixin)((0, service_prox
     }
     setupBinding() {
         this.bind(keys_1.DynamicKeys.CLEAR_TEMP_SERVICE).toClass(services_1.ClearTempService);
+        this.bind(keys_1.DynamicKeys.MARKET_OPEN_SETTLEMENT_SERVICE).toClass(services_1.MarketOpenSettlementService);
         this.bodyParser(multipart_form_date_parser_1.default);
         this.bodyParser(image_binary_parser_1.default);
         this.bind(rest_1.RestBindings.REQUEST_BODY_PARSER_OPTIONS).to({ limit: '20mb' });
@@ -181,6 +182,8 @@ class TradIntroBackendApplication extends (0, boot_1.BootMixin)((0, service_prox
             setTimeout(async () => {
                 const clearTempService = await this.get(keys_1.DynamicKeys.CLEAR_TEMP_SERVICE);
                 clearTempService.scheduleCroneJob();
+                const marketOpenSettlementService = await this.get(keys_1.DynamicKeys.MARKET_OPEN_SETTLEMENT_SERVICE);
+                marketOpenSettlementService.scheduleCroneJob();
             }, 30000);
         });
         if (process.env.NODE_ENV !== 'production') {

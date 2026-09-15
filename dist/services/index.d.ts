@@ -4,6 +4,7 @@ export * from './watch-list.service';
 export * from './notification.service';
 export * from './wallet.service';
 export * from './clear-temp.service';
+export * from './market-open-settlement.service';
 export * from './password-hasher.service';
 export * from './validations.service';
 export * from './jwt.service';

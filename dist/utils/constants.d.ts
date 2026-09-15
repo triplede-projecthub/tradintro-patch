@@ -80,6 +80,8 @@ export declare namespace DynamicValues {
     let TempDeletionPeriodInDays: number;
     let LoggerLevel: number;
     const TEMP_DELETION_CRON_TRIGGER_NAME: string;
+    const MarketOpenSettlementCronTime: string;
+    const MARKET_OPEN_SETTLEMENT_CRON_TRIGGER_NAME: string;
     const POINT_SYSTEM: {
         TYPES: {
             LOGIN: string;

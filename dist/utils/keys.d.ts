@@ -2,10 +2,11 @@ import { TokenService, UserService } from '@loopback/authentication';
 import { BindingKey } from '@loopback/context';
 import { UserLogin } from '../models/dto/user-login.model';
 import { User } from '../models/user.model';
-import { ClearTempService, PasswordHasher } from '../services';
+import { ClearTempService, MarketOpenSettlementService, PasswordHasher } from '../services';
 import { FileUploadHandler } from './types';
 export declare namespace DynamicKeys {
     const CLEAR_TEMP_SERVICE: BindingKey<ClearTempService>;
+    const MARKET_OPEN_SETTLEMENT_SERVICE: BindingKey<MarketOpenSettlementService>;
     const CONFIGURATION_DATA_OBJECT: BindingKey<any>;
 }
 export declare namespace PasswordHasherBindings {

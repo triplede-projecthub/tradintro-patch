@@ -7,6 +7,7 @@ tslib_1.__exportStar(require("./watch-list.service"), exports);
 tslib_1.__exportStar(require("./notification.service"), exports);
 tslib_1.__exportStar(require("./wallet.service"), exports);
 tslib_1.__exportStar(require("./clear-temp.service"), exports);
+tslib_1.__exportStar(require("./market-open-settlement.service"), exports);
 tslib_1.__exportStar(require("./password-hasher.service"), exports);
 tslib_1.__exportStar(require("./validations.service"), exports);
 tslib_1.__exportStar(require("./jwt.service"), exports);

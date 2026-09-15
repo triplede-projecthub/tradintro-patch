@@ -5,6 +5,7 @@ const context_1 = require("@loopback/context");
 var DynamicKeys;
 (function (DynamicKeys) {
     DynamicKeys.CLEAR_TEMP_SERVICE = context_1.BindingKey.create('service.clear.temp');
+    DynamicKeys.MARKET_OPEN_SETTLEMENT_SERVICE = context_1.BindingKey.create('service.market.open.settlement');
     DynamicKeys.CONFIGURATION_DATA_OBJECT = context_1.BindingKey.create('configuration.data.object');
 })(DynamicKeys = exports.DynamicKeys || (exports.DynamicKeys = {}));
 var PasswordHasherBindings;

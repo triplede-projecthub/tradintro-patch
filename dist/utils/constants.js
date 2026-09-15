@@ -93,6 +93,8 @@ var DynamicValues;
     DynamicValues.TempDeletionPeriodInDays = 10;
     DynamicValues.LoggerLevel = 0;
     DynamicValues.TEMP_DELETION_CRON_TRIGGER_NAME = "CLEAR_TEMP";
+    DynamicValues.MarketOpenSettlementCronTime = '* * * * *';
+    DynamicValues.MARKET_OPEN_SETTLEMENT_CRON_TRIGGER_NAME = "MARKET_OPEN_SETTLEMENT";
     DynamicValues.POINT_SYSTEM = {
         TYPES: {
             LOGIN: 'Login',
