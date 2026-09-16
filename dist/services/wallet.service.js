@@ -119,6 +119,21 @@ let WalletService = class WalletService {
                     +totalSellResult[0].amount /* + +totalSellResult[0].margin_amount */;
                 totalSellMargin = +totalSellResult[0].margin_amount;
             }
+            // TI24-0168-002: money blocked by unsettled BUY orders. Only order_status = REQUESTED
+            // (1) counts - executed (0), cancelled (2), expired (3) and rejected (4) hold nothing,
+            // which is why reusing the usable-balance row set (market_status != 0 ...) over-counted:
+            // it swept in cancelled/expired offline orders. This set self-adjusts across the market
+            // boundary: while the market is closed it is every requested market + requested limit
+            // order; once it opens the settlement cron flips the requested market orders to executed
+            // so only the still-pending limit orders remain. Summed on order_total, the same amount
+            // the wallet reserves when the order is placed (what the trade screen shows as buy amount).
+            let totalBuyBlockedAmount = 0;
+            let totalBuyBlockedResult = await this.walletRepository.execute(`SELECT sum(order_total) as amount
+         FROM order_list WHERE order_user_id=${userId} AND order_type=0 AND order_status=1`);
+            totalBuyBlockedResult = JSON.parse(JSON.stringify(totalBuyBlockedResult));
+            if (totalBuyBlockedResult && totalBuyBlockedResult.length > 0 && totalBuyBlockedResult[0].amount) {
+                totalBuyBlockedAmount = +totalBuyBlockedResult[0].amount;
+            }
             const query = 'select sum(wallet_trade_value) as total_value FROM wallet where wallet_user_id = ' +
                 userId;
             this.walletRepository
@@ -144,12 +159,7 @@ let WalletService = class WalletService {
                         last_allocation_date: last_recharge === null || last_recharge === void 0 ? void 0 : last_recharge.wallet_created_on,
                         trade_money_usable_balance: trade_money_usable_balance,
                         trade_money_balance: trade_money_balance,
-                        // TI24-0168-002: trade money committed to unsettled buy orders. This is the
-                        // same figure usable_balance subtracts: offline "requested" orders
-                        // (market_status != 0) plus online "pending" limit orders (order_status = 1).
-                        // Market closed -> requested + pending; once the market opens the settlement
-                        // cron clears the requested rows, so it naturally becomes pending only.
-                        trade_money_blocked: totalBuyPendingAmount,
+                        trade_money_blocked: totalBuyBlockedAmount,
                         margin_used: totalBuyMargin - totalSellMargin,
                         available_margin: available_margin
                     });
@@ -160,7 +170,7 @@ let WalletService = class WalletService {
                         last_allocation_date: last_recharge === null || last_recharge === void 0 ? void 0 : last_recharge.wallet_created_on,
                         trade_money_balance: 0,
                         trade_money_usable_balance: 0,
-                        trade_money_blocked: totalBuyPendingAmount,
+                        trade_money_blocked: totalBuyBlockedAmount,
                         available_margin: 0,
                         margin_used: totalBuyMargin - totalSellMargin
                     });
