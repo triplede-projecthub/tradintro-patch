@@ -48,8 +48,15 @@ let PortfolioService = class PortfolioService {
                     constants_1.MarketFlags.EXECUTION_TYPE.MARKET) {
                     const stock = await this.getStockHistory(id);
                     if (stock) {
-                        stockPrice =
-                            (stock.stock_history_high + stock.stock_history_low) / 2;
+                        // TI24-0168-002 (17/09): price a market order at the stock's current price -
+                        // the same value the app shows as Buy Amount (Stock.currentValueFormatted ->
+                        // history.current_price). The old (high+low)/2 mid diverged from what the user
+                        // saw, so order_total (and the Trade Money Blocked field that sums it) did not
+                        // match the placed buy amount. Fall back to the mid only if current_price is
+                        // missing/zero.
+                        stockPrice = (stock.current_price && stock.current_price > 0)
+                            ? stock.current_price
+                            : (stock.stock_history_high + stock.stock_history_low) / 2;
                     }
                     else {
                         throw new rest_1.HttpErrors.BadRequest('Invalid Stock Data');
@@ -181,8 +188,15 @@ let PortfolioService = class PortfolioService {
                     constants_1.MarketFlags.EXECUTION_TYPE.MARKET) {
                     const stock = await this.getStockHistory(id);
                     if (stock) {
-                        stockPrice =
-                            (stock.stock_history_high + stock.stock_history_low) / 2;
+                        // TI24-0168-002 (17/09): price a market order at the stock's current price -
+                        // the same value the app shows as Buy Amount (Stock.currentValueFormatted ->
+                        // history.current_price). The old (high+low)/2 mid diverged from what the user
+                        // saw, so order_total (and the Trade Money Blocked field that sums it) did not
+                        // match the placed buy amount. Fall back to the mid only if current_price is
+                        // missing/zero.
+                        stockPrice = (stock.current_price && stock.current_price > 0)
+                            ? stock.current_price
+                            : (stock.stock_history_high + stock.stock_history_low) / 2;
                     }
                     else {
                         throw new rest_1.HttpErrors.BadRequest('Invalid Stock Data');
