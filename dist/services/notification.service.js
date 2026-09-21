@@ -13,11 +13,45 @@ const models_1 = require("../models");
 const repositories_1 = require("../repositories");
 const util_service_1 = require("./util.service");
 let NotificationService = class NotificationService {
-    constructor(notificationsRepository, marketListRepository, userRepository, utilService) {
+    constructor(notificationsRepository, marketListRepository, userRepository, utilService, portfolioRepository, watchListRepository) {
         this.notificationsRepository = notificationsRepository;
         this.marketListRepository = marketListRepository;
         this.userRepository = userRepository;
         this.utilService = utilService;
+        this.portfolioRepository = portfolioRepository;
+        this.watchListRepository = watchListRepository;
+    }
+    /**
+     * TI24-0120-001 (sc.2): the stock ids the user currently holds plus everything on their
+     * watchlist. Stock-specific admin news belongs in the bell icon only for these; news for any
+     * other stock still appears under that stock's own News section. A live current holding is
+     * portfolio_status = 1 with order_status = 0 and market_status = 0 (the enum labels 1 as
+     * OLD_HOLDING, but the data uses it for the active position - carried over from the v1.1.0 fix).
+     */
+    async findFollowedStockIds(userId) {
+        const [holdings, watched] = await Promise.all([
+            this.portfolioRepository.find({
+                where: {
+                    order_user_id: userId,
+                    portfolio_status: 1,
+                    order_status: 0,
+                    market_status: 0,
+                },
+                fields: { order_stock_id: true },
+            }),
+            this.watchListRepository.find({
+                where: { watchlist_user_id: userId },
+                fields: { watchlist_stock_id: true },
+            }),
+        ]);
+        const ids = new Set();
+        for (const h of holdings)
+            if (h.order_stock_id)
+                ids.add(+h.order_stock_id);
+        for (const w of watched)
+            if (w.watchlist_stock_id)
+                ids.add(+w.watchlist_stock_id);
+        return [...ids];
     }
     updateReadStatusOfNotification(id, userId) {
         return this.notificationsRepository.updateAll({
@@ -93,7 +127,18 @@ let NotificationService = class NotificationService {
             if (read_status) {
                 alertPopupStatus = [read_status];
             }
-            const query = this.generateNotificationQuery(notificationType, notificationStatus, alertPopupStatus, userId, offset, limit, currentUserLevel, search, stockFilterId);
+            // TI24-0120-001 (sc.2): restrict the news list to stock-specific notifications for
+            // stocks the user holds or watches. General/no-stock news is untouched (it comes through
+            // the UNION), and the alert tab is untouched (alerts are for stocks the user follows).
+            // A follower of nothing gets no stock-specific news (IN (-1) matches no stock).
+            let followedStockFilter = '';
+            if (type === 'news') {
+                const followedStockIds = await this.findFollowedStockIds(userId);
+                followedStockFilter = followedStockIds.length > 0
+                    ? ' AND notification.notification_stock_id IN (' + followedStockIds.join(',') + ') '
+                    : ' AND notification.notification_stock_id IN (-1) ';
+            }
+            const query = this.generateNotificationQuery(notificationType, notificationStatus, alertPopupStatus, userId, offset, limit, currentUserLevel, search, stockFilterId, followedStockFilter);
             const includeFilter = [
                 {
                     relation: 'history',
@@ -123,7 +168,7 @@ let NotificationService = class NotificationService {
             });
         });
     }
-    generateNotificationQuery(notification_type, notification_status, alert_popup_status, notification_user_id, offset = 0, limit = 10, userLevel = 1, searchQuery, stockId = 0) {
+    generateNotificationQuery(notification_type, notification_status, alert_popup_status, notification_user_id, offset = 0, limit = 10, userLevel = 1, searchQuery, stockId = 0, followedStockFilter = '') {
         // Convert arrays to comma-separated strings for SQL IN clauses
         const notificationTypeStr = notification_type.join(',');
         const notificationStatusStr = notification_status.join(',');
@@ -148,7 +193,7 @@ let NotificationService = class NotificationService {
             AND notification.notification_status IN (${notificationStatusStr})
             AND notification.alert_popup_status IN (${alertPopupStatusStr})
             AND notification.notification_user_id=${notification_user_id}
-            ${levelWiseFilter} ${searchFilter}
+            ${levelWiseFilter} ${searchFilter} ${followedStockFilter}
             AND notification.notification_id IS NOT NULL
 
       UNION
@@ -218,10 +263,14 @@ NotificationService = tslib_1.__decorate([
     tslib_1.__param(1, (0, repository_1.repository)(repositories_1.MarketRepository)),
     tslib_1.__param(2, (0, repository_1.repository)(repositories_1.UserRepository)),
     tslib_1.__param(3, (0, core_1.service)(util_service_1.UtilService)),
+    tslib_1.__param(4, (0, repository_1.repository)(repositories_1.PortfolioItemRepository)),
+    tslib_1.__param(5, (0, repository_1.repository)(repositories_1.WatchListRepository)),
     tslib_1.__metadata("design:paramtypes", [repositories_1.NotificationsRepository,
         repositories_1.MarketRepository,
         repositories_1.UserRepository,
-        util_service_1.UtilService])
+        util_service_1.UtilService,
+        repositories_1.PortfolioItemRepository,
+        repositories_1.WatchListRepository])
 ], NotificationService);
 exports.NotificationService = NotificationService;
 //# sourceMappingURL=notification.service.js.map
