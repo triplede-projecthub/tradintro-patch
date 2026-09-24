@@ -21,38 +21,6 @@ let NotificationService = class NotificationService {
         this.portfolioRepository = portfolioRepository;
         this.watchListRepository = watchListRepository;
     }
-    /**
-     * TI24-0120-001 (sc.2): the stock ids the user currently holds plus everything on their
-     * watchlist. Stock-specific admin news belongs in the bell icon only for these; news for any
-     * other stock still appears under that stock's own News section. A live current holding is
-     * portfolio_status = 1 with order_status = 0 and market_status = 0 (the enum labels 1 as
-     * OLD_HOLDING, but the data uses it for the active position - carried over from the v1.1.0 fix).
-     */
-    async findFollowedStockIds(userId) {
-        const [holdings, watched] = await Promise.all([
-            this.portfolioRepository.find({
-                where: {
-                    order_user_id: userId,
-                    portfolio_status: 1,
-                    order_status: 0,
-                    market_status: 0,
-                },
-                fields: { order_stock_id: true },
-            }),
-            this.watchListRepository.find({
-                where: { watchlist_user_id: userId },
-                fields: { watchlist_stock_id: true },
-            }),
-        ]);
-        const ids = new Set();
-        for (const h of holdings)
-            if (h.order_stock_id)
-                ids.add(+h.order_stock_id);
-        for (const w of watched)
-            if (w.watchlist_stock_id)
-                ids.add(+w.watchlist_stock_id);
-        return [...ids];
-    }
     updateReadStatusOfNotification(id, userId) {
         return this.notificationsRepository.updateAll({
             alert_popup_status: 1
@@ -94,119 +62,111 @@ let NotificationService = class NotificationService {
     async count(where) {
         return this.notificationsRepository.count(where);
     }
+    /**
+     * The viewer's level (user.tree_level holds level_position; 1 = L1). Unknown -> L1.
+     */
+    async getViewerLevel(userId) {
+        var _a, _b;
+        const user = await this.userRepository.findOne({
+            where: { user_id: userId },
+            include: [{ relation: 'userLevel' }]
+        });
+        return (_b = (_a = user === null || user === void 0 ? void 0 : user.userLevel) === null || _a === void 0 ? void 0 : _a.level_position) !== null && _b !== void 0 ? _b : 1;
+    }
+    /**
+     * Notification visibility - ONE builder feeds both the bell list and the badge count, so the
+     * badge can never advertise rows the list then hides (the "count shows but nothing displays"
+     * bug: the count used a plain filter while the list ran different SQL).
+     *
+     * Portfolio/watchlist targeting happens when rows are created (one row per user). Here we only
+     * enforce the LEVEL rule for broadcast content, per the notification matrix:
+     *  - The user's own activity - type 0 portfolio alert / delist notice, 1 watchlist alert,
+     *    2 trade, 4 limit execution/expiry - always shows: it only exists because this user placed the
+     *    order / set the alert, and hiding the outcome of their own order would be worse than the
+     *    matrix's "NA" (which means L1 cannot place limit orders or set watchlist alerts at all).
+     *  - type 3 general news / market holiday (no stock): every level.
+     *  - type 3 stock news / watchlist-delist notice: L2 and above (portfolio or watchlist); L1 only
+     *    for a stock currently held - L1 has no watchlist, so watchlist-targeted rows are not theirs.
+     * Replaces the old list rules, which hid general news + holiday from L1 AND L2
+     * (notification_stock_id != 0) and - since the TI24-0120 port - hid everything for stocks the
+     * user currently holds (it matched portfolio_status = 1, which is a CLOSED position; the live
+     * portfolio is portfolio_status = 0).
+     */
+    buildNotificationWhere(userId, type, read_status, userLevel) {
+        let notificationType = [0, 1];
+        let notificationStatus = [0, 1];
+        if (type === 'alert') {
+            notificationType = [0, 1];
+            notificationStatus = [0, 1, 2];
+        }
+        else if (type === 'news') {
+            notificationType = [0, 1, 2, 3, 4];
+            notificationStatus = [1, 2];
+        }
+        let alertPopupStatus = [0, 1];
+        if (read_status !== undefined && read_status !== null && read_status !== '' && !isNaN(+read_status)) {
+            alertPopupStatus = [+read_status];
+        }
+        let where = ' n.notification_user_id = ' + (+userId) +
+            ' AND n.notification_type IN (' + notificationType.join(',') + ')' +
+            ' AND n.notification_status IN (' + notificationStatus.join(',') + ')' +
+            ' AND n.alert_popup_status IN (' + alertPopupStatus.join(',') + ')';
+        if (userLevel < 2) {
+            where += ' AND (n.notification_type <> 3 OR IFNULL(n.notification_stock_id, 0) = 0 OR EXISTS (' +
+                'SELECT 1 FROM order_list o WHERE o.order_user_id = n.notification_user_id' +
+                ' AND o.order_stock_id = n.notification_stock_id AND o.portfolio_status = 0' +
+                ' AND o.order_status = 0 AND o.market_status = 0))';
+        }
+        return where;
+    }
+    async countForUser(userId, type, read_status) {
+        const userLevel = await this.getViewerLevel(userId);
+        const query = 'SELECT COUNT(*) AS count FROM notification n WHERE' +
+            this.buildNotificationWhere(userId, type, read_status, userLevel);
+        const rows = JSON.parse(JSON.stringify(await this.notificationsRepository.execute(query)));
+        return { count: rows && rows.length > 0 ? +rows[0].count : 0 };
+    }
     find(userId, type, read_status, search, limit = 10, offset = 0) {
         return new Promise(async (resolve, reject) => {
-            var _a, _b;
-            const user = await this.userRepository.findOne({
-                where: {
-                    user_id: userId
-                },
-                include: [{
-                        relation: 'userLevel'
-                    }]
-            });
-            const currentUserLevel = (_b = (_a = user === null || user === void 0 ? void 0 : user.userLevel) === null || _a === void 0 ? void 0 : _a.level_position) !== null && _b !== void 0 ? _b : 1;
-            let notificationType = [0, 1];
-            let notificationStatus = [0, 1];
-            let stockFilterId = 0;
-            if (type) {
-                switch (type) {
-                    case 'alert':
-                        notificationType = [0, 1];
-                        notificationStatus = [0, 1, 2];
-                        stockFilterId = -1000;
-                        break;
-                    case 'news':
-                        notificationType = [0, 1, 2, 3, 4];
-                        notificationStatus = [1, 2];
-                        break;
+            try {
+                const userLevel = await this.getViewerLevel(userId);
+                let searchFilter = '';
+                if (search) {
+                    // escape quotes/backslashes - the old query concatenated the raw search text
+                    const term = String(search).replace(/[\\']/g, (m) => '\\' + m);
+                    searchFilter = " AND LOWER(s.stock_name) LIKE LOWER('" + term + "%')";
                 }
-            }
-            //const groupBy = " GROUP BY order_list.order_stock_id ";
-            let alertPopupStatus = [0, 1];
-            if (read_status) {
-                alertPopupStatus = [read_status];
-            }
-            // TI24-0120-001 (sc.2): restrict the news list to stock-specific notifications for
-            // stocks the user holds or watches. General/no-stock news is untouched (it comes through
-            // the UNION), and the alert tab is untouched (alerts are for stocks the user follows).
-            // A follower of nothing gets no stock-specific news (IN (-1) matches no stock).
-            let followedStockFilter = '';
-            if (type === 'news') {
-                const followedStockIds = await this.findFollowedStockIds(userId);
-                followedStockFilter = followedStockIds.length > 0
-                    ? ' AND notification.notification_stock_id IN (' + followedStockIds.join(',') + ') '
-                    : ' AND notification.notification_stock_id IN (-1) ';
-            }
-            const query = this.generateNotificationQuery(notificationType, notificationStatus, alertPopupStatus, userId, offset, limit, currentUserLevel, search, stockFilterId, followedStockFilter);
-            const includeFilter = [
-                {
-                    relation: 'history',
-                    scope: {
-                        limit: 1,
-                        order: ['stock_history_date DESC'],
+                const query = 'SELECT n.* FROM notification n' +
+                    ' LEFT JOIN stock_list s ON s.stock_id = n.notification_stock_id WHERE' +
+                    this.buildNotificationWhere(userId, type, read_status, userLevel) + searchFilter +
+                    ' ORDER BY n.notification_execute_date DESC, n.notification_id DESC' +
+                    ' LIMIT ' + (+limit || 10) + ' OFFSET ' + (+offset || 0);
+                console.log("Notification :> ", query);
+                const includeFilter = [
+                    {
+                        relation: 'history',
+                        scope: {
+                            limit: 1,
+                            order: ['stock_history_date DESC'],
+                        }
                     }
-                }
-            ];
-            console.log("Notification :> ", query);
-            this.notificationsRepository.execute(query).then(async (result) => {
-                result = JSON.parse(JSON.stringify(result));
-                for await (const item of result) {
+                ];
+                const result = JSON.parse(JSON.stringify(await this.notificationsRepository.execute(query)));
+                for (const item of result) {
                     item.market = await this.marketListRepository.findOne({
                         where: {
                             stock_id: item.notification_stock_id,
                         },
                         include: includeFilter
                     });
-                    // await this.utilService.handleMarketHistory((item as any).market)
                 }
-                console.log("result end");
                 resolve(result);
-            }).catch((err) => {
+            }
+            catch (err) {
                 console.log(err);
                 reject(err);
-            });
+            }
         });
-    }
-    generateNotificationQuery(notification_type, notification_status, alert_popup_status, notification_user_id, offset = 0, limit = 10, userLevel = 1, searchQuery, stockId = 0, followedStockFilter = '') {
-        // Convert arrays to comma-separated strings for SQL IN clauses
-        const notificationTypeStr = notification_type.join(',');
-        const notificationStatusStr = notification_status.join(',');
-        const alertPopupStatusStr = alert_popup_status.join(',');
-        let levelWiseFilter = ' AND notification.notification_stock_id != 0 ';
-        if (userLevel > 2) {
-            levelWiseFilter = '';
-        }
-        else {
-            stockId = -1000;
-        }
-        let searchFilter = '';
-        if (searchQuery) {
-            searchFilter = " AND LOWER(stock_list.stock_name) LIKE LOWER('" + searchQuery + "%') ";
-            stockId = -1000;
-        }
-        const query = `
-      SELECT notification.*
-      FROM notification
-      RIGHT JOIN stock_list ON notification.notification_stock_id = stock_list.stock_id
-      WHERE notification.notification_type IN (${notificationTypeStr})
-            AND notification.notification_status IN (${notificationStatusStr})
-            AND notification.alert_popup_status IN (${alertPopupStatusStr})
-            AND notification.notification_user_id=${notification_user_id}
-            ${levelWiseFilter} ${searchFilter} ${followedStockFilter}
-            AND notification.notification_id IS NOT NULL
-
-      UNION
-
-      SELECT *
-      FROM notification
-      WHERE notification_stock_id=${stockId} AND notification_user_id =${notification_user_id}
-      GROUP BY notification_news_id
-
-      ORDER BY notification_execute_date DESC
-      LIMIT ${limit} OFFSET ${offset};
-    `;
-        return query;
     }
     updateReadStatus(userId, notificationIds) {
         return this.notificationsRepository.updateAll({

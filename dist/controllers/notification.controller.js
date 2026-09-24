@@ -16,27 +16,10 @@ let NotificationController = class NotificationController {
         this.user = user;
     }
     async count(read_status, type) {
+        // The badge must count exactly what the list shows, so it goes through the same
+        // visibility builder as find() (level rules included) instead of a plain filter.
         return new Promise((resolve, reject) => {
-            let notification_type = [1, 2, 3, 4];
-            let notification_status = [1, 2];
-            if (type) {
-                switch (type) {
-                    case 'alert':
-                        notification_type = [0, 1];
-                        notification_status = [0, 1, 2];
-                        break;
-                    case 'news':
-                        notification_type = [1, 2, 3, 4];
-                        notification_status = [1, 2];
-                        break;
-                }
-            }
-            this.notificationService.count({
-                alert_popup_status: read_status,
-                notification_type: { inq: notification_type },
-                notification_status: { inq: notification_status },
-                notification_user_id: +(this.user.id)
-            }).then((result) => {
+            this.notificationService.countForUser(+(this.user.id), type, read_status).then((result) => {
                 resolve((0, api_utils_1.generateApiResponse)({
                     data: result,
                     status: true,

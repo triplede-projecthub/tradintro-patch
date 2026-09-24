@@ -22,6 +22,24 @@ let UserTokenService = class UserTokenService {
         }
         return new Promise(async (resolve, reject) => {
             try {
+                // TI24-0119-001: a device belongs to whoever is logged in on it NOW. Unlink this FCM
+                // token / device from every other account first - otherwise, if the previous
+                // account's logout never reached the server (no network, reinstall, cleared data),
+                // its user_token row stays live and the push cron keeps sending that account's
+                // notifications to this phone (e.g. an L1 user seeing an L2 account's pushes).
+                const sameDevice = [];
+                if (fcmTokenChangeRequest.fcmToken) {
+                    sameDevice.push({ token: fcmTokenChangeRequest.fcmToken });
+                }
+                if (fcmTokenChangeRequest.deviceId) {
+                    sameDevice.push({ device_id: fcmTokenChangeRequest.deviceId });
+                }
+                if (sameDevice.length > 0) {
+                    await this.userTokenRepository.deleteAll({
+                        token_user_id: { neq: userId },
+                        or: sameDevice
+                    });
+                }
                 const existing = await this.userTokenRepository.updateAll({
                     token: fcmTokenChangeRequest.fcmToken,
                     token_status: 0,
