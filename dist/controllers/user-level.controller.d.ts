@@ -8,5 +8,5 @@ export declare class UserLevelController {
     private user;
     constructor(userLevelService: UserLevelService, user: UserProfile);
     getUserLevels(): Promise<ApiResponse<UserLevelsResponse>>;
-    getUserLevelsHistory(limit?: number, offset?: number): Promise<ApiResponse<UserPoints[]>>;
+    getUserLevelsHistory(limit?: number, offset?: number, activity?: string): Promise<ApiResponse<UserPoints[]>>;
 }

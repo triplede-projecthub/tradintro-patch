@@ -9,5 +9,5 @@ export declare class UserLevelService {
     private userLevelPointsRepository;
     constructor(userPointsService: UserPointsService, userRepository: UserRepository, userPointsRepository: UserPointsRepository, userLevelPointsRepository: UserLevelPointsRepository);
     getUserLevels(userId: number): Promise<UserLevelsResponse>;
-    getUserPointsHistory(userId: number, limit: number, offset: number): Promise<UserPoints[]>;
+    getUserPointsHistory(userId: number, limit: number, offset: number, activity?: string): Promise<UserPoints[]>;
 }

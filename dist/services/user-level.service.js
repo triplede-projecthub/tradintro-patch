@@ -58,14 +58,21 @@ let UserLevelService = class UserLevelService {
             }
         });
     }
-    getUserPointsHistory(userId, limit, offset) {
+    getUserPointsHistory(userId, limit, offset, activity) {
+        const where = {
+            points_user_id: userId,
+            total_points: {
+                gt: 0
+            }
+        };
+        // TI26-BUG-016: optional filter on the Activity column (points_type: Login, Recharge,
+        // Stock, Trade Value, Buy Transaction, Watchlist, Referal). Filtered here, not in the app,
+        // so paging stays correct.
+        if (activity) {
+            where.points_type = activity;
+        }
         return this.userPointsRepository.find({
-            where: {
-                points_user_id: userId,
-                total_points: {
-                    gt: 0
-                }
-            },
+            where: where,
             limit: limit,
             offset: offset,
             order: ['points_date DESC'],

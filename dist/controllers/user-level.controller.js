@@ -26,9 +26,9 @@ let UserLevelController = class UserLevelController {
             }).catch((error) => reject(error));
         });
     }
-    async getUserLevelsHistory(limit = 10, offset = 0) {
+    async getUserLevelsHistory(limit = 10, offset = 0, activity) {
         return new Promise((resolve, reject) => {
-            this.userLevelService.getUserPointsHistory(+(this.user.id), limit, offset).then((result) => {
+            this.userLevelService.getUserPointsHistory(+(this.user.id), limit, offset, activity).then((result) => {
                 resolve((0, api_utils_1.generateApiResponse)({
                     data: result,
                     status: true,
@@ -63,8 +63,9 @@ tslib_1.__decorate([
     }),
     tslib_1.__param(0, rest_1.param.query.number('limit', { optional: true, default: 10 })),
     tslib_1.__param(1, rest_1.param.query.number('offset', { optional: true, default: 0 })),
+    tslib_1.__param(2, rest_1.param.query.string('activity', { required: false })),
     tslib_1.__metadata("design:type", Function),
-    tslib_1.__metadata("design:paramtypes", [Object, Object]),
+    tslib_1.__metadata("design:paramtypes", [Object, Object, String]),
     tslib_1.__metadata("design:returntype", Promise)
 ], UserLevelController.prototype, "getUserLevelsHistory", null);
 UserLevelController = tslib_1.__decorate([
