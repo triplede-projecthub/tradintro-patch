@@ -764,15 +764,26 @@ let PortfolioService = class PortfolioService {
       }
     } */
     async calculateChargeV2(orderType, stockId, stockPrice, quantity, userId, productType = constants_1.MarketFlags.PRODUCT_TYPE.HOLDING) {
-        const totalStockValue = stockPrice * quantity;
+        // TI24-0168-002: exact money arithmetic, in whole paise. Brokerage and transaction charge
+        // were rounded with toFixed(2) on binary floats (an exact .xx5 could round down), and the
+        // totals went through limitDecimalPoints' double rounding (3 then 2 decimals), so an order's
+        // total could be a paisa off the Buy Amount the app showed - and the "Trade money blocked"
+        // sum drifted from the sum of Buy Amounts. Formula (the app uses the identical one):
+        //   brokerage   = 0.5% of stock value, rounded half-up to the paisa
+        //   transaction = 0.5% of that brokerage, rounded half-up to the paisa
+        //   total       = stock value +/- both (buy / sell)
+        const valuePaise = Math.round(stockPrice * 100) * quantity;
+        const brokagePaise = Math.round(valuePaise * constants_1.MarketFlags.FEE_PERCENTAGES.BROKAGE_AMOUNT);
+        const transactionPaise = Math.round(brokagePaise * constants_1.MarketFlags.FEE_PERCENTAGES.TRANSACTION_AMOUNT);
+        const totalStockValue = valuePaise / 100;
         let totalAmount = 0;
-        let totalCalculatedAmount = this.limitDecimalPoints(totalStockValue);
+        let totalCalculatedAmount = totalStockValue;
         let marginAmount = 0;
-        const brokageAmount = +(constants_1.MarketFlags.FEE_PERCENTAGES.BROKAGE_AMOUNT * totalStockValue).toFixed(2);
-        const transactionAmount = +(constants_1.MarketFlags.FEE_PERCENTAGES.TRANSACTION_AMOUNT * brokageAmount).toFixed(2);
+        const brokageAmount = brokagePaise / 100;
+        const transactionAmount = transactionPaise / 100;
         switch (orderType) {
             case constants_1.MarketFlags.ORDER_TYPE.BUY:
-                totalCalculatedAmount += brokageAmount + transactionAmount;
+                totalCalculatedAmount = (valuePaise + brokagePaise + transactionPaise) / 100;
                 if (productType === constants_1.MarketFlags.PRODUCT_TYPE.POSITION) {
                     const user = await this.userService.findById(userId);
                     if (user) {
@@ -795,7 +806,7 @@ let PortfolioService = class PortfolioService {
                 }
                 break;
             case constants_1.MarketFlags.ORDER_TYPE.SELL:
-                totalCalculatedAmount -= brokageAmount + transactionAmount;
+                totalCalculatedAmount = (valuePaise - brokagePaise - transactionPaise) / 100;
                 if (productType === constants_1.MarketFlags.PRODUCT_TYPE.POSITION) {
                     //find all non-portfolio position purchases of stocks count and margin amount
                     const buyInfo = await this.getStockCountsAndMarginAmount(constants_1.MarketFlags.ORDER_TYPE.BUY, userId, stockId);
