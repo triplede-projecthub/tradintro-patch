@@ -772,7 +772,11 @@ let PortfolioService = class PortfolioService {
         //   brokerage   = 0.5% of stock value, rounded half-up to the paisa
         //   transaction = 0.5% of that brokerage, rounded half-up to the paisa
         //   total       = stock value +/- both (buy / sell)
-        const valuePaise = Math.round(stockPrice * 100) * quantity;
+        // The price is first taken to the paisa half-up, like the app (BigDecimal HALF_UP) and the
+        // order_price DECIMAL(10,2) column. stockPrice * 100 alone is a binary float - a limit price
+        // typed with 3 decimals such as 41.305 gives 4130.4999999999995 and Math.round went DOWN to
+        // 41.30 while the app showed 41.31 - so it is trimmed to 4 decimals before rounding.
+        const valuePaise = Math.round(+(stockPrice * 100).toFixed(4)) * quantity;
         const brokagePaise = Math.round(valuePaise * constants_1.MarketFlags.FEE_PERCENTAGES.BROKAGE_AMOUNT);
         const transactionPaise = Math.round(brokagePaise * constants_1.MarketFlags.FEE_PERCENTAGES.TRANSACTION_AMOUNT);
         const totalStockValue = valuePaise / 100;
@@ -1640,7 +1644,40 @@ let PortfolioService = class PortfolioService {
                 .execute(query)
                 .then(async (result) => {
                 result = JSON.parse(JSON.stringify(result));
-                for await (const item of result) {
+                //TI26-BUG-010: this loop ran ~6 queries per row one after another (market + its
+                //history + stock info, the open alert, a buy total and a sell total). The buy/sell
+                //totals and the alerts of the whole page now come from one query each, and the
+                //rows' market lookups run side by side.
+                const pageStockIds = Array.from(new Set(result.map((item) => +item.order_stock_id))).filter((id) => !isNaN(id));
+                const totalsByStock = {};
+                const alertByStock = {};
+                if (!stockId && pageStockIds.length > 0) {
+                    const [totalRows, alerts] = await Promise.all([
+                        this.portfolioRepository.execute(`SELECT order_stock_id, order_type, sum(order_qty) as count, sum(order_total) as \
+              amount, sum(margin_amount_used) as margin_amount FROM order_list WHERE order_user_id=${user_id} AND \
+              order_status=0 AND market_status=0 AND portfolio_status=0 AND order_stock_id IN (${pageStockIds.join(',')}) \
+              AND order_type IN (0,1) AND margin_status=${margin_status} GROUP BY order_stock_id, order_type`),
+                        this.notificationsRepository.find({
+                            where: {
+                                notification_stock_id: { inq: pageStockIds },
+                                notification_type: 0,
+                                notification_user_id: user_id,
+                                notification_status: 0,
+                            },
+                            order: ['notification_id ASC'],
+                        }),
+                    ]);
+                    for (const row of JSON.parse(JSON.stringify(totalRows))) {
+                        const totals = totalsByStock[row.order_stock_id] || (totalsByStock[row.order_stock_id] = {});
+                        totals[row.order_type] = row;
+                    }
+                    for (const alert of alerts) {
+                        if (!alertByStock[alert.notification_stock_id]) {
+                            alertByStock[alert.notification_stock_id] = alert;
+                        }
+                    }
+                }
+                await Promise.all(result.map(async (item) => {
                     item.market = await this.marketListRepository.findOne({
                         where: {
                             stock_id: item.order_stock_id,
@@ -1649,14 +1686,7 @@ let PortfolioService = class PortfolioService {
                     });
                     //await this.utilService.handleMarketHistory((item as any).market);
                     if (!stockId) {
-                        item.alert = await this.notificationsRepository.findOne({
-                            where: {
-                                notification_stock_id: item.order_stock_id,
-                                notification_type: 0,
-                                notification_user_id: user_id,
-                                notification_status: 0,
-                            },
-                        });
+                        item.alert = alertByStock[item.order_stock_id] || null;
                         if (item.alert) {
                             item.alertPrice = item.alert.notification_price;
                         }
@@ -1670,33 +1700,14 @@ let PortfolioService = class PortfolioService {
                                 item.order_execution_type ==
                                     constants_1.MarketFlags.EXECUTION_TYPE.LIMIT;
                         }
-                        let buyQuantity = 0;
-                        let buyTotalAmount = 0;
-                        let sellTotalAmount = 0;
-                        let buyQuantityResult = await this.portfolioRepository.execute(`SELECT sum(order_qty) as count, sum(order_total) as \
-              amount, sum(margin_amount_used) as margin_amount FROM order_list WHERE order_user_id=${user_id} AND \
-              order_status=0 AND market_status=0 AND portfolio_status=0 AND order_stock_id=${item.order_stock_id} \
-              AND order_type=0 AND margin_status=${margin_status}`);
-                        buyQuantityResult = JSON.parse(JSON.stringify(buyQuantityResult));
-                        if (buyQuantityResult && buyQuantityResult.length > 0) {
-                            buyQuantity = +buyQuantityResult[0].count;
-                            buyTotalAmount =
-                                +buyQuantityResult[0].amount +
-                                    +buyQuantityResult[0].margin_amount;
-                        }
-                        let sellQuantity = 0;
-                        let sellQuantityResult = await this.portfolioRepository.execute(`SELECT sum(order_qty) as count, sum(order_total) as \
-              amount, sum(margin_amount_used) as margin_amount FROM order_list WHERE order_user_id=${user_id} AND \
-              order_status=0 AND market_status=0 AND portfolio_status=0 AND order_stock_id=${item.order_stock_id} \
-              AND order_type=1 AND margin_status=${margin_status}`);
-                        sellQuantityResult = JSON.parse(JSON.stringify(sellQuantityResult));
-                        if (sellQuantityResult && sellQuantityResult.length > 0) {
-                            sellQuantity = +sellQuantityResult[0].count;
-                            sellTotalAmount =
-                                +sellQuantityResult[0].amount +
-                                    +sellQuantityResult[0].margin_amount;
-                        }
-                        const currentPrice = item.market.history &&
+                        const totals = totalsByStock[item.order_stock_id] || {};
+                        const buyRow = totals[0];
+                        const sellRow = totals[1];
+                        const buyQuantity = buyRow ? +buyRow.count : 0;
+                        const buyTotalAmount = buyRow ? +buyRow.amount + +buyRow.margin_amount : 0;
+                        const sellQuantity = sellRow ? +sellRow.count : 0;
+                        const sellTotalAmount = sellRow ? +sellRow.amount + +sellRow.margin_amount : 0;
+                        const currentPrice = item.market && item.market.history &&
                             item.market.history.length > 0
                             ? (item.market.history[0].stock_history_high +
                                 item.market.history[0].stock_history_low) /
@@ -1709,7 +1720,7 @@ let PortfolioService = class PortfolioService {
                         item.totalQty = qty;
                         item.gainLossPercentage = this.limitDecimalPoints((gainLossValue / totalPrice) * 100);
                     }
-                }
+                }));
                 console.log('result end');
                 resolve(result);
             })
@@ -1922,79 +1933,59 @@ let PortfolioService = class PortfolioService {
                 let totalPortfolioCount = 0;
                 let pos = 0;
                 const apiFormattedDate = this.dateApiFormattedDate();
-                for await (const portfolio of portfoliosDistinct) {
-                    let buyQuantity = 0;
-                    let buyQuantityResult = await this.portfolioRepository.execute(`SELECT sum(order_qty) as count, sum(order_total) as \
-            amount, sum(margin_amount_used) as margin_amount FROM order_list WHERE order_user_id=${user_id} AND portfolio_status=0 AND \
-            order_status=0 AND market_status=0  AND order_stock_id=${portfolio.order_stock_id} \
-            AND order_type=0 ${marginStatusQuery}`);
-                    buyQuantityResult = JSON.parse(JSON.stringify(buyQuantityResult));
-                    if (buyQuantityResult && buyQuantityResult.length > 0) {
-                        buyQuantity = +buyQuantityResult[0].count;
-                    }
-                    let sellQuantity = 0;
-                    let sellQuantityResult = await this.portfolioRepository.execute(`SELECT sum(order_qty) as count, sum(order_total) as \
-            amount, sum(margin_amount_used) as margin_amount FROM order_list WHERE order_user_id=${user_id} AND portfolio_status=0 AND\
-            order_status=0 AND market_status=0  AND order_stock_id=${portfolio.order_stock_id} \
-            AND order_type=1 ${marginStatusQuery}`);
-                    sellQuantityResult = JSON.parse(JSON.stringify(sellQuantityResult));
-                    if (sellQuantityResult && sellQuantityResult.length > 0) {
-                        sellQuantity = +sellQuantityResult[0].count;
-                    }
-                    console.log('TODAY', apiFormattedDate);
-                    const dateToday = new Date(Date.parse(apiFormattedDate));
-                    console.log('TODAY', dateToday);
-                    const market = await this.marketListRepository.findOne({
-                        where: {
-                            stock_id: portfolio.order_stock_id,
-                        },
-                        include: [
-                            {
-                                relation: 'history',
-                                scope: {
-                                    //TODO - enable with date (issue when no history with current date)
-                                    /*  where: {
-                                       stock_history_date: dateToday
-                                     }, */
-                                    limit: 1,
-                                    order: ['stock_history_date DESC'],
-                                },
-                            },
-                        ],
-                    });
-                    if (market) {
-                        if (!market.history || market.history.length == 0) {
-                            //call price api
-                            /*  const lastHistory = await this.marketHistoryRepository.findOne({
-                             where: {
-                               stock_history_code: market.stock_api_code
-                             },
-                             order: ['stock_history_date DESC']
-                           }); */
-                            /*   const priceHistory = await this.getLatestPriceHistory(market.stock_api_code, lastHistory);
-                            if (priceHistory)
-                              market.history = [priceHistory] */
+                //TI26-BUG-010: this loop ran 4 queries per held stock one after another (a buy
+                //total, a sell total, the stock and its latest price) - ~150 round trips for a
+                //36-stock portfolio. The quantities now come from one grouped query and the
+                //latest prices are looked up side by side; the sums are still added in the same
+                //order as before.
+                const holdingStockIds = Array.from(new Set(portfoliosDistinct.map((p) => +p.order_stock_id))).filter((id) => !isNaN(id));
+                const qtyByStock = {};
+                if (holdingStockIds.length > 0) {
+                    let qtyRows = await this.portfolioRepository.execute(`SELECT order_stock_id, order_type, sum(order_qty) as count \
+            FROM order_list WHERE order_user_id=${user_id} AND portfolio_status=0 AND \
+            order_status=0 AND market_status=0  AND order_stock_id IN (${holdingStockIds.join(',')}) \
+            AND order_type IN (0,1) ${marginStatusQuery} GROUP BY order_stock_id, order_type`);
+                    for (const row of JSON.parse(JSON.stringify(qtyRows))) {
+                        const qty = qtyByStock[row.order_stock_id] || (qtyByStock[row.order_stock_id] = { buy: 0, sell: 0 });
+                        if (+row.order_type === 0) {
+                            qty.buy = +row.count;
                         }
                         else {
-                            this.consoleLog('FROM HISTORY >' + dateToday, market.stock_api_code);
-                        }
-                        if (market.history && market.history.length > 0) {
-                            let currentPrice = (market.history[0].stock_history_high +
-                                market.history[0].stock_history_low) /
-                                2;
-                            currentPrice = this.limitDecimalPoints(currentPrice, 3);
-                            //currentPrice = this.roundNumberV1(currentPrice, 2);
-                            const stockCount = buyQuantity - sellQuantity;
-                            const currentStockValue = stockCount != 0 ? currentPrice * stockCount : 0;
-                            this.consoleLog(market.stock_code, '--------- > ' + pos++);
-                            this.consoleLog('q', buyQuantity - sellQuantity + '');
-                            this.consoleLog('c p', currentPrice + '');
-                            this.consoleLog('t v', currentStockValue + '');
-                            totalStockValue += currentStockValue;
-                            totalPortfolioCount += stockCount;
+                            qty.sell = +row.count;
                         }
                     }
                 }
+                const markets = await Promise.all(portfoliosDistinct.map((portfolio) => this.marketListRepository.findOne({
+                    where: {
+                        stock_id: portfolio.order_stock_id,
+                    },
+                    include: [
+                        {
+                            relation: 'history',
+                            scope: {
+                                //TODO - enable with date (issue when no history with current date)
+                                limit: 1,
+                                order: ['stock_history_date DESC'],
+                            },
+                        },
+                    ],
+                })));
+                portfoliosDistinct.forEach((portfolio, index) => {
+                    const market = markets[index];
+                    const qty = qtyByStock[portfolio.order_stock_id] || { buy: 0, sell: 0 };
+                    const buyQuantity = qty.buy;
+                    const sellQuantity = qty.sell;
+                    if (market && market.history && market.history.length > 0) {
+                        let currentPrice = (market.history[0].stock_history_high +
+                            market.history[0].stock_history_low) /
+                            2;
+                        currentPrice = this.limitDecimalPoints(currentPrice, 3);
+                        const stockCount = buyQuantity - sellQuantity;
+                        const currentStockValue = stockCount != 0 ? currentPrice * stockCount : 0;
+                        totalStockValue += currentStockValue;
+                        totalPortfolioCount += stockCount;
+                    }
+                });
                 /*
               currentTotalValue = buySum-sellSum
       

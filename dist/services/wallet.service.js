@@ -127,9 +127,16 @@ let WalletService = class WalletService {
             // order; once it opens the settlement cron flips the requested market orders to executed
             // so only the still-pending limit orders remain. Summed on order_total, the same amount
             // the wallet reserves when the order is placed (what the trade screen shows as buy amount).
+            // TI26-BUG-030: orders placed on the website count too. The site stores an after-hours
+            // MARKET buy as order_status = 0 with market_status = 1 (offline, not yet executed) where
+            // the API uses order_status = 1, so "order_status = 1" alone left every web offline market
+            // order out. (order_status = 0 AND market_status = 1) is that web "requested" state - the
+            // site's own pending_total uses the same set, and both settlement crons clear it (to
+            // market_status = 0) once the market opens, so the open/closed behaviour is unchanged.
             let totalBuyBlockedAmount = 0;
             let totalBuyBlockedResult = await this.walletRepository.execute(`SELECT sum(order_total) as amount
-         FROM order_list WHERE order_user_id=${userId} AND order_type=0 AND order_status=1`);
+         FROM order_list WHERE order_user_id=${userId} AND order_type=0
+         AND (order_status=1 OR (order_status=0 AND market_status=1))`);
             totalBuyBlockedResult = JSON.parse(JSON.stringify(totalBuyBlockedResult));
             if (totalBuyBlockedResult && totalBuyBlockedResult.length > 0 && totalBuyBlockedResult[0].amount) {
                 totalBuyBlockedAmount = +totalBuyBlockedResult[0].amount;
